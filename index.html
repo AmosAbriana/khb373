@@ -10,7 +10,289 @@
 </head>
 <body>
     <div id="app"></div>
-    <script type="module" src="/main.js"></script>
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    currentDate: new Date(),
+                    selectedMonth: new Date().getMonth(),
+                    selectedYear: new Date().getFullYear(),
+                    isDrawing: false,
+                    isErasing: false,
+                    canvas: null,
+                    ctx: null,
+                    chatId: null,
+                    drawingData: null,
+                    lastX: 0,
+                    lastY: 0,
+                };
+            },
+            mounted() {
+                this.initTelegram();
+                this.initCanvas();
+                this.loadDrawing();
+                window.addEventListener('resize', () => {
+                    this.initCanvas();
+                    this.$nextTick(() => {
+                        if (this.drawingData) {
+                            this.restoreDrawing();
+                        }
+                    });
+                });
+            },
+            methods: {
+                initTelegram() {
+                    if (window.Telegram && window.Telegram.WebApp) {
+                        window.Telegram.WebApp.ready();
+                        window.Telegram.WebApp.expand();
+                        // Получаем chat_id из initData
+                        const initData = window.Telegram.WebApp.initDataUnsafe;
+                        if (initData && initData.user) {
+                            this.chatId = initData.user.id;
+                        } else {
+                            // Альтернативный способ получения chat_id
+                            const urlParams = new URLSearchParams(window.location.search);
+                            this.chatId = parseInt(urlParams.get('chat_id')) || 0;
+                        }
+                    } else {
+                        // Для тестирования без Telegram
+                        const urlParams = new URLSearchParams(window.location.search);
+                        this.chatId = parseInt(urlParams.get('chat_id')) || 1;
+                    }
+                },
+                initCanvas() {
+                    this.$nextTick(() => {
+                        this.canvas = this.$refs.canvas;
+                        if (!this.canvas) return;
+                        
+                        this.ctx = this.canvas.getContext('2d');
+                        this.ctx.lineCap = 'round';
+                        this.ctx.lineJoin = 'round';
+                        this.ctx.lineWidth = 3;
+                        this.ctx.strokeStyle = '#000000';
+                        
+                        // Устанавливаем размеры canvas
+                        const container = this.canvas.parentElement;
+                        if (container) {
+                            const rect = container.getBoundingClientRect();
+                            this.canvas.width = rect.width;
+                            this.canvas.height = Math.min(rect.width * 0.75, 600);
+                        }
+                    });
+                },
+                async loadDrawing() {
+                    if (!this.ctx || !this.canvas) {
+                        await this.$nextTick();
+                        this.initCanvas();
+                    }
+                    try {
+                        // ВАЖНО: Замените на URL вашего API сервера (где запущен api_server.py)
+                        // Например: 'http://localhost:3000' для локального тестирования
+                        // Или: 'https://your-domain.com' для продакшена
+                        const apiUrl = 'http://localhost:3000'; // ЗАМЕНИТЕ НА ВАШ API URL
+                        const response = await fetch(
+                            `${apiUrl}/api/drawing/${this.chatId}/${this.selectedYear}/${this.selectedMonth + 1}`
+                        );
+                        const data = await response.json();
+                        if (data.drawing_data) {
+                            this.drawingData = data.drawing_data;
+                            await this.$nextTick();
+                            this.restoreDrawing();
+                        } else {
+                            // Очищаем canvas если нет сохраненного рисунка
+                            if (this.ctx && this.canvas) {
+                                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Ошибка загрузки рисунка:', error);
+                    }
+                },
+                restoreDrawing() {
+                    if (!this.drawingData || !this.ctx || !this.canvas) return;
+                    const img = new Image();
+                    img.onload = () => {
+                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                        this.ctx.drawImage(img, 0, 0, this.canvas.width, this.canvas.height);
+                    };
+                    img.onerror = () => {
+                        console.error('Ошибка загрузки изображения');
+                    };
+                    img.src = this.drawingData;
+                },
+                getEventPos(event) {
+                    const rect = this.canvas.getBoundingClientRect();
+                    if (event.touches && event.touches.length > 0) {
+                        return {
+                            x: event.touches[0].clientX - rect.left,
+                            y: event.touches[0].clientY - rect.top
+                        };
+                    }
+                    return {
+                        x: event.clientX - rect.left,
+                        y: event.clientY - rect.top
+                    };
+                },
+                startDrawing(event) {
+                    event.preventDefault();
+                    this.isDrawing = true;
+                    const pos = this.getEventPos(event);
+                    this.lastX = pos.x;
+                    this.lastY = pos.y;
+                },
+                draw(event) {
+                    if (!this.isDrawing) return;
+                    event.preventDefault();
+                    
+                    const pos = this.getEventPos(event);
+                    const currentX = pos.x;
+                    const currentY = pos.y;
+
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.lastX, this.lastY);
+                    this.ctx.lineTo(currentX, currentY);
+                    
+                    if (this.isErasing) {
+                        this.ctx.globalCompositeOperation = 'destination-out';
+                        this.ctx.lineWidth = 20;
+                    } else {
+                        this.ctx.globalCompositeOperation = 'source-over';
+                        this.ctx.lineWidth = 3;
+                    }
+                    
+                    this.ctx.stroke();
+                    this.ctx.closePath();
+
+                    this.lastX = currentX;
+                    this.lastY = currentY;
+                },
+                stopDrawing() {
+                    if (this.isDrawing) {
+                        this.isDrawing = false;
+                        this.saveDrawing();
+                    }
+                },
+                async saveDrawing() {
+                    try {
+                        const dataUrl = this.canvas.toDataURL();
+                        // ВАЖНО: Замените на URL вашего API сервера (где запущен api_server.py)
+                        const apiUrl = 'http://localhost:3000'; // ЗАМЕНИТЕ НА ВАШ API URL
+                        const response = await fetch(`${apiUrl}/api/drawing`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                chat_id: this.chatId,
+                                year: this.selectedYear,
+                                month: this.selectedMonth + 1,
+                                drawing_data: dataUrl,
+                            }),
+                        });
+                        if (response.ok) {
+                            this.drawingData = dataUrl;
+                        }
+                    } catch (error) {
+                        console.error('Ошибка сохранения рисунка:', error);
+                    }
+                },
+                toggleDrawing() {
+                    this.isDrawing = false;
+                    this.isErasing = false;
+                    this.ctx.globalCompositeOperation = 'source-over';
+                    this.ctx.lineWidth = 3;
+                },
+                toggleErasing() {
+                    this.isDrawing = false;
+                    this.isErasing = true;
+                    this.ctx.globalCompositeOperation = 'destination-out';
+                    this.ctx.lineWidth = 20;
+                },
+                clearCanvas() {
+                    if (confirm('Очистить весь рисунок?')) {
+                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                        this.saveDrawing();
+                    }
+                },
+                prevMonth() {
+                    if (this.selectedMonth === 0) {
+                        this.selectedMonth = 11;
+                        this.selectedYear--;
+                    } else {
+                        this.selectedMonth--;
+                    }
+                    this.drawingData = null;
+                    this.loadDrawing();
+                },
+                nextMonth() {
+                    if (this.selectedMonth === 11) {
+                        this.selectedMonth = 0;
+                        this.selectedYear++;
+                    } else {
+                        this.selectedMonth++;
+                    }
+                    this.drawingData = null;
+                    this.loadDrawing();
+                },
+                getMonthName(month) {
+                    const months = [
+                        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+                        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+                    ];
+                    return months[month];
+                },
+            },
+            template: `
+                <div class="min-h-screen bg-gray-100 p-4">
+                    <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-4">
+                        <div class="mb-4 flex items-center justify-between">
+                            <button @click="prevMonth" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                                ←
+                            </button>
+                            <h2 class="text-2xl font-bold">{{ getMonthName(selectedMonth) }} {{ selectedYear }}</h2>
+                            <button @click="nextMonth" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                                →
+                            </button>
+                        </div>
+                        
+                        <div class="mb-4 flex gap-2 justify-center">
+                            <button 
+                                @click="toggleDrawing"
+                                :class="['px-4 py-2 rounded', !isErasing ? 'bg-green-500 text-white' : 'bg-gray-300']">
+                                ✏️ Рисовать
+                            </button>
+                            <button 
+                                @click="toggleErasing"
+                                :class="['px-4 py-2 rounded', isErasing ? 'bg-red-500 text-white' : 'bg-gray-300']">
+                                🧹 Ластик
+                            </button>
+                            <button 
+                                @click="clearCanvas"
+                                class="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">
+                                🗑️ Очистить
+                            </button>
+                        </div>
+
+                        <div class="border-2 border-gray-300 rounded-lg overflow-hidden">
+                            <canvas
+                                ref="canvas"
+                                @mousedown="startDrawing"
+                                @mousemove="draw"
+                                @mouseup="stopDrawing"
+                                @mouseleave="stopDrawing"
+                                @touchstart.prevent="startDrawing"
+                                @touchmove.prevent="draw"
+                                @touchend.prevent="stopDrawing"
+                                class="w-full cursor-crosshair"
+                                style="touch-action: none; max-width: 100%; height: auto;"
+                            ></canvas>
+                        </div>
+                    </div>
+                </div>
+            `,
+        }).mount('#app');
+    </script>
 </body>
 </html>
-

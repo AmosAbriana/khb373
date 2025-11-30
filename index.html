@@ -88,16 +88,12 @@
                         this.initCanvas();
                     }
                     try {
-                        // ВАЖНО: Замените на URL вашего API сервера (где запущен api_server.py)
-                        // Например: 'http://localhost:3000' для локального тестирования
-                        // Или: 'https://your-domain.com' для продакшена
-                        const apiUrl = 'http://localhost:3000'; // ЗАМЕНИТЕ НА ВАШ API URL
-                        const response = await fetch(
-                            `${apiUrl}/api/drawing/${this.chatId}/${this.selectedYear}/${this.selectedMonth + 1}`
-                        );
-                        const data = await response.json();
-                        if (data.drawing_data) {
-                            this.drawingData = data.drawing_data;
+                        // Загружаем рисунок из localStorage
+                        const storageKey = `drawing_${this.chatId}_${this.selectedYear}_${this.selectedMonth + 1}`;
+                        const savedData = localStorage.getItem(storageKey);
+                        
+                        if (savedData) {
+                            this.drawingData = savedData;
                             await this.$nextTick();
                             this.restoreDrawing();
                         } else {
@@ -174,28 +170,19 @@
                         this.saveDrawing();
                     }
                 },
-                async saveDrawing() {
+                saveDrawing() {
                     try {
                         const dataUrl = this.canvas.toDataURL();
-                        // ВАЖНО: Замените на URL вашего API сервера (где запущен api_server.py)
-                        const apiUrl = 'http://localhost:3000'; // ЗАМЕНИТЕ НА ВАШ API URL
-                        const response = await fetch(`${apiUrl}/api/drawing`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                chat_id: this.chatId,
-                                year: this.selectedYear,
-                                month: this.selectedMonth + 1,
-                                drawing_data: dataUrl,
-                            }),
-                        });
-                        if (response.ok) {
-                            this.drawingData = dataUrl;
-                        }
+                        // Сохраняем рисунок в localStorage
+                        const storageKey = `drawing_${this.chatId}_${this.selectedYear}_${this.selectedMonth + 1}`;
+                        localStorage.setItem(storageKey, dataUrl);
+                        this.drawingData = dataUrl;
                     } catch (error) {
                         console.error('Ошибка сохранения рисунка:', error);
+                        // Если localStorage переполнен, показываем предупреждение
+                        if (error.name === 'QuotaExceededError') {
+                            alert('Недостаточно места для сохранения. Очистите старые рисунки.');
+                        }
                     }
                 },
                 toggleDrawing() {

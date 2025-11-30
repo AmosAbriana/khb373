@@ -84,17 +84,23 @@
                         if (!this.canvas) return;
                         
                         this.ctx = this.canvas.getContext('2d');
+                        const dpr = window.devicePixelRatio || 1;
                         this.ctx.lineCap = 'round';
                         this.ctx.lineJoin = 'round';
-                        this.ctx.lineWidth = 3;
+                        this.ctx.lineWidth = 3 * dpr;
                         this.ctx.strokeStyle = '#000000';
                         
                         // Устанавливаем размеры canvas по размеру календаря
                         const calendarGrid = this.$refs.calendarGrid;
                         if (calendarGrid) {
                             const rect = calendarGrid.getBoundingClientRect();
-                            this.canvas.width = rect.width;
-                            this.canvas.height = rect.height;
+                            // Используем devicePixelRatio для четкости на retina экранах
+                            const dpr = window.devicePixelRatio || 1;
+                            this.canvas.width = rect.width * dpr;
+                            this.canvas.height = rect.height * dpr;
+                            this.canvas.style.width = rect.width + 'px';
+                            this.canvas.style.height = rect.height + 'px';
+                            this.ctx.scale(dpr, dpr);
                         }
                     });
                 },
@@ -127,8 +133,7 @@
                     if (!this.drawingData || !this.ctx || !this.canvas) return;
                     const img = new Image();
                     img.onload = () => {
-                        // Не очищаем полностью, чтобы календарь был виден
-                        // Просто рисуем поверх
+                        // Рисуем сохраненный рисунок поверх календаря
                         this.ctx.drawImage(img, 0, 0, this.canvas.width, this.canvas.height);
                     };
                     img.onerror = () => {
@@ -138,15 +143,16 @@
                 },
                 getEventPos(event) {
                     const rect = this.canvas.getBoundingClientRect();
+                    const dpr = window.devicePixelRatio || 1;
                     if (event.touches && event.touches.length > 0) {
                         return {
-                            x: event.touches[0].clientX - rect.left,
-                            y: event.touches[0].clientY - rect.top
+                            x: (event.touches[0].clientX - rect.left) * dpr,
+                            y: (event.touches[0].clientY - rect.top) * dpr
                         };
                     }
                     return {
-                        x: event.clientX - rect.left,
-                        y: event.clientY - rect.top
+                        x: (event.clientX - rect.left) * dpr,
+                        y: (event.clientY - rect.top) * dpr
                     };
                 },
                 startDrawing(event) {
@@ -168,12 +174,13 @@
                     this.ctx.moveTo(this.lastX, this.lastY);
                     this.ctx.lineTo(currentX, currentY);
                     
+                    const dpr = window.devicePixelRatio || 1;
                     if (this.isErasing) {
                         this.ctx.globalCompositeOperation = 'destination-out';
-                        this.ctx.lineWidth = 20;
+                        this.ctx.lineWidth = 20 * dpr;
                     } else {
                         this.ctx.globalCompositeOperation = 'source-over';
-                        this.ctx.lineWidth = 3;
+                        this.ctx.lineWidth = 3 * dpr;
                     }
                     
                     this.ctx.stroke();
@@ -206,14 +213,20 @@
                 toggleDrawing() {
                     this.isDrawing = false;
                     this.isErasing = false;
-                    this.ctx.globalCompositeOperation = 'source-over';
-                    this.ctx.lineWidth = 3;
+                    if (this.ctx) {
+                        this.ctx.globalCompositeOperation = 'source-over';
+                        const dpr = window.devicePixelRatio || 1;
+                        this.ctx.lineWidth = 3 * dpr;
+                    }
                 },
                 toggleErasing() {
                     this.isDrawing = false;
                     this.isErasing = true;
-                    this.ctx.globalCompositeOperation = 'destination-out';
-                    this.ctx.lineWidth = 20;
+                    if (this.ctx) {
+                        this.ctx.globalCompositeOperation = 'destination-out';
+                        const dpr = window.devicePixelRatio || 1;
+                        this.ctx.lineWidth = 20 * dpr;
+                    }
                 },
                 clearCanvas() {
                     if (confirm('Очистить весь рисунок?')) {
@@ -309,13 +322,13 @@
                             </button>
                         </div>
 
-                        <div class="border-2 border-gray-300 rounded-lg overflow-hidden relative" ref="calendarGrid">
-                            <!-- Календарь -->
-                            <div class="bg-white">
+                        <div class="border-2 border-gray-300 rounded-lg overflow-hidden relative bg-white" ref="calendarGrid">
+                            <!-- Календарь - должен быть виден -->
+                            <div class="relative z-0">
                                 <!-- Дни недели -->
-                                <div class="grid grid-cols-7 border-b border-gray-300">
+                                <div class="grid grid-cols-7 border-b-2 border-gray-400">
                                     <div v-for="day in getWeekDays()" :key="day" 
-                                         class="p-2 text-center font-semibold text-gray-700 bg-gray-50 border-r border-gray-300 last:border-r-0">
+                                         class="p-3 text-center font-bold text-gray-800 bg-gray-100 border-r border-gray-300 last:border-r-0">
                                         {{ day }}
                                     </div>
                                 </div>
@@ -323,16 +336,16 @@
                                 <!-- Числа месяца -->
                                 <div class="grid grid-cols-7">
                                     <div v-for="(day, index) in getCalendarDays()" :key="index"
-                                         class="aspect-square border-r border-b border-gray-300 last:border-r-0 bg-white relative"
+                                         class="min-h-[60px] border-r border-b border-gray-300 last:border-r-0 bg-white relative flex items-start justify-start p-1"
                                          :class="{'bg-gray-50': day === null}">
-                                        <span v-if="day !== null" class="absolute top-1 left-1 text-sm font-medium text-gray-700">
+                                        <span v-if="day !== null" class="text-base font-semibold text-gray-800 mt-1 ml-1">
                                             {{ day }}
                                         </span>
                                     </div>
                                 </div>
                             </div>
                             
-                            <!-- Canvas для рисования поверх календаря -->
+                            <!-- Canvas для рисования поверх календаря - прозрачный -->
                             <canvas
                                 ref="canvas"
                                 @mousedown="startDrawing"
@@ -342,8 +355,8 @@
                                 @touchstart.prevent="startDrawing"
                                 @touchmove.prevent="draw"
                                 @touchend.prevent="stopDrawing"
-                                class="absolute top-0 left-0 w-full h-full cursor-crosshair pointer-events-auto"
-                                style="touch-action: none;"
+                                class="absolute top-0 left-0 w-full h-full cursor-crosshair"
+                                style="touch-action: none; z-index: 10; pointer-events: auto;"
                             ></canvas>
                         </div>
                     </div>

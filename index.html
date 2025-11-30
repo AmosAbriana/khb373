@@ -31,8 +31,10 @@
             },
             mounted() {
                 this.initTelegram();
-                this.initCanvas();
-                this.loadDrawing();
+                this.$nextTick(() => {
+                    this.initCanvas();
+                    this.loadDrawing();
+                });
                 window.addEventListener('resize', () => {
                     this.initCanvas();
                     this.$nextTick(() => {
@@ -41,6 +43,20 @@
                         }
                     });
                 });
+            },
+            watch: {
+                selectedMonth() {
+                    this.$nextTick(() => {
+                        this.initCanvas();
+                        this.loadDrawing();
+                    });
+                },
+                selectedYear() {
+                    this.$nextTick(() => {
+                        this.initCanvas();
+                        this.loadDrawing();
+                    });
+                }
             },
             methods: {
                 initTelegram() {
@@ -73,12 +89,12 @@
                         this.ctx.lineWidth = 3;
                         this.ctx.strokeStyle = '#000000';
                         
-                        // Устанавливаем размеры canvas
-                        const container = this.canvas.parentElement;
-                        if (container) {
-                            const rect = container.getBoundingClientRect();
+                        // Устанавливаем размеры canvas по размеру календаря
+                        const calendarGrid = this.$refs.calendarGrid;
+                        if (calendarGrid) {
+                            const rect = calendarGrid.getBoundingClientRect();
                             this.canvas.width = rect.width;
-                            this.canvas.height = Math.min(rect.width * 0.75, 600);
+                            this.canvas.height = rect.height;
                         }
                     });
                 },
@@ -98,6 +114,7 @@
                             this.restoreDrawing();
                         } else {
                             // Очищаем canvas если нет сохраненного рисунка
+                            // Canvas прозрачный, так что календарь будет виден
                             if (this.ctx && this.canvas) {
                                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                             }
@@ -110,7 +127,8 @@
                     if (!this.drawingData || !this.ctx || !this.canvas) return;
                     const img = new Image();
                     img.onload = () => {
-                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                        // Не очищаем полностью, чтобы календарь был виден
+                        // Просто рисуем поверх
                         this.ctx.drawImage(img, 0, 0, this.canvas.width, this.canvas.height);
                     };
                     img.onerror = () => {
@@ -230,6 +248,35 @@
                     ];
                     return months[month];
                 },
+                getDaysInMonth(year, month) {
+                    return new Date(year, month + 1, 0).getDate();
+                },
+                getFirstDayOfMonth(year, month) {
+                    // Возвращает день недели первого дня месяца (0 = воскресенье, 1 = понедельник, ...)
+                    // Преобразуем в формат где понедельник = 0
+                    const day = new Date(year, month, 1).getDay();
+                    return day === 0 ? 6 : day - 1; // Понедельник = 0
+                },
+                getCalendarDays() {
+                    const daysInMonth = this.getDaysInMonth(this.selectedYear, this.selectedMonth);
+                    const firstDay = this.getFirstDayOfMonth(this.selectedYear, this.selectedMonth);
+                    const days = [];
+                    
+                    // Добавляем пустые ячейки для дней предыдущего месяца
+                    for (let i = 0; i < firstDay; i++) {
+                        days.push(null);
+                    }
+                    
+                    // Добавляем дни текущего месяца
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        days.push(day);
+                    }
+                    
+                    return days;
+                },
+                getWeekDays() {
+                    return ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                },
             },
             template: `
                 <div class="min-h-screen bg-gray-100 p-4">
@@ -262,7 +309,30 @@
                             </button>
                         </div>
 
-                        <div class="border-2 border-gray-300 rounded-lg overflow-hidden">
+                        <div class="border-2 border-gray-300 rounded-lg overflow-hidden relative" ref="calendarGrid">
+                            <!-- Календарь -->
+                            <div class="bg-white">
+                                <!-- Дни недели -->
+                                <div class="grid grid-cols-7 border-b border-gray-300">
+                                    <div v-for="day in getWeekDays()" :key="day" 
+                                         class="p-2 text-center font-semibold text-gray-700 bg-gray-50 border-r border-gray-300 last:border-r-0">
+                                        {{ day }}
+                                    </div>
+                                </div>
+                                
+                                <!-- Числа месяца -->
+                                <div class="grid grid-cols-7">
+                                    <div v-for="(day, index) in getCalendarDays()" :key="index"
+                                         class="aspect-square border-r border-b border-gray-300 last:border-r-0 bg-white relative"
+                                         :class="{'bg-gray-50': day === null}">
+                                        <span v-if="day !== null" class="absolute top-1 left-1 text-sm font-medium text-gray-700">
+                                            {{ day }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Canvas для рисования поверх календаря -->
                             <canvas
                                 ref="canvas"
                                 @mousedown="startDrawing"
@@ -272,8 +342,8 @@
                                 @touchstart.prevent="startDrawing"
                                 @touchmove.prevent="draw"
                                 @touchend.prevent="stopDrawing"
-                                class="w-full cursor-crosshair"
-                                style="touch-action: none; max-width: 100%; height: auto;"
+                                class="absolute top-0 left-0 w-full h-full cursor-crosshair pointer-events-auto"
+                                style="touch-action: none;"
                             ></canvas>
                         </div>
                     </div>
